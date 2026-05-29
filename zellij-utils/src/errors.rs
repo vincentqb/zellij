@@ -778,6 +778,19 @@ mod not_wasm {
         }
     }
 
+    /// Drain log4rs's buffered file appender and the stdio streams.
+    ///
+    /// Without this, panic messages written via `error!` can be lost when the
+    /// main thread calls `process::exit`, since `RollingFileAppender` is fully
+    /// buffered. Flushing stdio also ensures the panic banner reaches the
+    /// terminal even when zellij was in raw mode.
+    pub(crate) fn flush_streams_and_logs() {
+        use std::io::{self, Write};
+        log::logger().flush();
+        let _ = io::stdout().flush();
+        let _ = io::stderr().flush();
+    }
+
     /// Custom panic handler/hook. Prints the [`ErrorContext`].
     pub fn handle_panic<T>(info: &PanicHookInfo<'_>, sender: Option<&SenderWithContext<T>>)
     where
@@ -833,8 +846,14 @@ mod not_wasm {
             // a better solution would be to escape raw mode before we do this, but it's not trivial
             // to get os_input here
             println!("\u{1b}[2J{}", fmt_report(report));
+            // Drain log4rs and stdio so the panic line above and the `error!`
+            // record reach disk and terminal before exit.
+            flush_streams_and_logs();
             process::exit(1);
         } else {
+            // Symmetric flush: helps if the receiving thread later panics or
+            // the process exits before log4rs flushes naturally.
+            flush_streams_and_logs();
             let _ = sender.unwrap().send(T::error(fmt_report(report)));
         }
     }
@@ -960,5 +979,15 @@ mod not_wasm {
                 },
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flush_streams_and_logs_does_not_panic() {
+        flush_streams_and_logs();
     }
 }
