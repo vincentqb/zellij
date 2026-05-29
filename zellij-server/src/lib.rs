@@ -1850,6 +1850,29 @@ pub fn start_server(mut os_input: Box<dyn ServerOsApi>, socket_path: PathBuf) {
     drop(std::fs::remove_file(&socket_path));
 }
 
+// Upper bound on configured scroll buffer size; guards against OOM at session init
+// from pathological values (see zellij-org/zellij#2094).
+const MAX_SCROLL_BUFFER_SIZE: usize = 1_000_000;
+
+fn clamp_scroll_buffer_size(requested: usize) -> usize {
+    if requested == 0 {
+        log::warn!(
+            "scroll_buffer_size of 0 is invalid; falling back to default {}",
+            DEFAULT_SCROLL_BUFFER_SIZE
+        );
+        DEFAULT_SCROLL_BUFFER_SIZE
+    } else if requested > MAX_SCROLL_BUFFER_SIZE {
+        log::warn!(
+            "scroll_buffer_size {} exceeds maximum {}; clamping to maximum",
+            requested,
+            MAX_SCROLL_BUFFER_SIZE
+        );
+        MAX_SCROLL_BUFFER_SIZE
+    } else {
+        requested
+    }
+}
+
 fn init_session(
     os_input: Box<dyn ServerOsApi>,
     to_server: SenderWithContext<ServerInstruction>,
@@ -1863,11 +1886,11 @@ fn init_session(
 ) -> SessionMetaData {
     config.options = config.options.merge(*config_options.clone());
 
-    let _ = SCROLL_BUFFER_SIZE.set(
-        config_options
-            .scroll_buffer_size
-            .unwrap_or(DEFAULT_SCROLL_BUFFER_SIZE),
-    );
+    let configured = config_options
+        .scroll_buffer_size
+        .unwrap_or(DEFAULT_SCROLL_BUFFER_SIZE);
+    let scroll_buffer_size = clamp_scroll_buffer_size(configured);
+    let _ = SCROLL_BUFFER_SIZE.set(scroll_buffer_size);
 
     let (to_screen, screen_receiver): ChannelWithContext<ScreenInstruction> = channels::unbounded();
     let to_screen = SenderWithContext::new(to_screen);
@@ -2345,4 +2368,27 @@ fn get_available_layouts(config_options: &Options) -> (Vec<LayoutInfo>, Vec<Layo
         .as_ref()
         .map(|l| format!("{}", l.display()));
     Layout::list_available_layouts(layout_dir, &default_layout_name)
+}
+
+#[cfg(test)]
+mod scroll_buffer_validation_tests {
+    use super::*;
+
+    #[test]
+    fn clamp_scroll_buffer_size_zero_returns_default() {
+        assert_eq!(clamp_scroll_buffer_size(0), DEFAULT_SCROLL_BUFFER_SIZE);
+    }
+
+    #[test]
+    fn clamp_scroll_buffer_size_oversized_returns_max() {
+        assert_eq!(
+            clamp_scroll_buffer_size(2_000_000_000),
+            MAX_SCROLL_BUFFER_SIZE
+        );
+    }
+
+    #[test]
+    fn clamp_scroll_buffer_size_in_range_passes_through() {
+        assert_eq!(clamp_scroll_buffer_size(50_000), 50_000);
+    }
 }
