@@ -19,7 +19,7 @@ use std::{
 
 use vte;
 use zellij_utils::{
-    consts::{DEFAULT_SCROLL_BUFFER_SIZE, SCROLL_BUFFER_SIZE},
+    consts::{DEFAULT_SCROLL_BUFFER_SIZE, MAX_ROW_COLUMNS, SCROLL_BUFFER_SIZE},
     data::{Palette, PaletteColor, Styling},
     input::mouse::{MouseEvent, MouseEventType},
     pane_size::SizeInPixels,
@@ -4677,6 +4677,9 @@ impl Row {
         (absolute_index, position_inside_character)
     }
     pub fn add_character_at(&mut self, terminal_character: TerminalCharacter, x: usize) {
+        if self.columns.len() >= MAX_ROW_COLUMNS {
+            return; // bounded by MAX_ROW_COLUMNS to prevent OOM under bursty stdout (#2104)
+        }
         match self.width_cached().cmp(&x) {
             Ordering::Equal => {
                 // this is unwrapped because this always happens after self.width_cached()
