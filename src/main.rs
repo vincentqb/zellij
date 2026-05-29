@@ -2,6 +2,10 @@ mod commands;
 #[cfg(test)]
 mod tests;
 
+#[cfg(all(feature = "jemalloc", unix, not(target_env = "musl")))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 use clap::Parser;
 use zellij_utils::{
     cli::{CliAction, CliArgs, Command, Sessions},
