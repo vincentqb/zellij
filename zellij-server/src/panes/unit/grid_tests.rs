@@ -6102,3 +6102,21 @@ fn csi_5n_status_query_still_handled_locally() {
         "DSR 5 must still produce its local 'all good' reply"
     );
 }
+
+#[test]
+fn add_character_at_caps_row_width_at_max_row_columns() {
+    use crate::panes::grid::Row;
+    use crate::panes::terminal_character::TerminalCharacter;
+    use zellij_utils::consts::MAX_ROW_COLUMNS;
+    let mut row = Row::new();
+    let overshoot = 100;
+    for n in 0..(MAX_ROW_COLUMNS + overshoot) {
+        row.add_character_at(TerminalCharacter::new_singlewidth('a'), n);
+    }
+    assert!(
+        row.columns.len() <= MAX_ROW_COLUMNS,
+        "row grew to {} columns, exceeding cap {}",
+        row.columns.len(),
+        MAX_ROW_COLUMNS
+    );
+}
